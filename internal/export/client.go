@@ -76,16 +76,18 @@ func BuildWriter(ctx context.Context, dest string, agentId string, overwrite boo
 	var w io.WriteCloser
 	var bucket *blob.Bucket
 
+	prefix := ""
+
 	// fileblob needs no_tmp_dir to avoid cross-device rename errors in containers
 	if uri.Scheme == "file" {
 		q := uri.Query()
 		q.Set("no_tmp_dir", "true")
 		uri.RawQuery = q.Encode()
-	}
-
-	prefix := strings.TrimPrefix(uri.Path, "/")
-	if !strings.HasSuffix(prefix, "/") {
-		prefix += "/"
+	} else {
+		prefix = strings.TrimPrefix(uri.Path, "/")
+		if prefix != "/" && !strings.HasSuffix(prefix, "/") {
+			prefix += "/"
+		}
 	}
 
 	switch uri.Scheme {
