@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/kianjones9/checkpoint.af/internal/api"
 	"github.com/kianjones9/checkpoint.af/internal/export"
 )
 
@@ -23,23 +22,28 @@ func main() {
 	lettaApiKey := flag.String("api_key", os.Getenv("LETTA_API_KEY"), "api key for authenticating to Letta")
 	agentId := flag.String("agent_id", "agent-<uuid4>", "ID of agent to snapshot")
 	// TODO: support exporting to af.directory
-	dest := flag.String("dest", "", "URI of desired destination (supports file, s3, gcs, azure, and other compatible backends: https://gocloud.dev/howto/blob/#services)")
-	// only_on_diff
+	dest := flag.String("dest", "", "URI of desired destination (supports directories and bucket prefixes file://, s3://, gs://, azure_blob://, and other compatible backends: https://gocloud.dev/howto/blob/#services)")
+	overwrite := flag.Bool("overwrite", false, "If true overwrites existing file (agent-id.af) otherwise writes a new timestamp prefixed file")
+	// TODO: only_on_diff
 	checkpointServer := flag.String("checkpoint_server", "http://127.0.0.1:8080", "URI of checkpoint server if running (executes locally if not running)")
 
 	flag.Parse()
 
-	payload := api.Config{
+	if *dest == "" {
+		log.Fatal("No destination directory of bucket prefix supplied")
+	}
+
+	payload := export.Config{
 		Host:        *host,
 		Destination: *dest,
 		BearerToken: *lettaApiKey,
 		AgentId:     *agentId,
+		Overwrite:   *overwrite,
 	}
 
 	jsonPayload, err := json.Marshal(payload)
 	if err != nil {
 		log.Fatal(err)
-		return
 	}
 
 	resp, err := http.Post(*checkpointServer+"/save", "application/json", bytes.NewBuffer(jsonPayload))
@@ -65,12 +69,15 @@ func main() {
 		log.Fatal(err)
 	}
 
-	bucket, w, err := export.BuildWriter(req.Context(), *dest)
+	bucket, w, err := export.BuildWriter(req.Context(), *dest, *agentId, *overwrite)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer bucket.Close()
 	defer w.Close()
 
-	export.ProcessResponse(resp, w)
+	err = export.ProcessResponse(resp, w)
+	if err != nil {
+		log.Fatal(err)
+	}
 }

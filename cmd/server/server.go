@@ -18,7 +18,10 @@ func logRequest(next http.HandlerFunc) http.HandlerFunc {
 }
 
 func main() {
-	http.HandleFunc("/save", logRequest(api.Save))
+
+	client := &http.Client{}
+
+	http.HandleFunc("/save", logRequest(api.Save(client)))
 	http.HandleFunc("/rollback", logRequest(api.Rollback))
 	http.HandleFunc("/migrate", logRequest(api.Migrate))
 

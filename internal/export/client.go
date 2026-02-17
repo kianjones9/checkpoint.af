@@ -2,7 +2,6 @@ package export
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -17,6 +16,14 @@ import (
 	_ "gocloud.dev/blob/memblob"   // In-Memory
 	_ "gocloud.dev/blob/s3blob"    // S3
 )
+
+type Config struct {
+	BearerToken string `json:"Authorization"`
+	AgentId     string `json:"agent_id"`
+	Host        string `json:"host"`
+	Destination string `json:"destination"`
+	Overwrite   bool   `json:"overwrite"`
+}
 
 func BuildRequest(host string, agentId string, bearerToken string) (*http.Request, error) {
 
@@ -39,7 +46,6 @@ func BuildRequest(host string, agentId string, bearerToken string) (*http.Reques
 	}
 
 	req.Header.Add("Authorization", authHeader)
-	req.Header.Add("Content-Type", "application/json")
 
 	return req, nil
 }
@@ -47,7 +53,7 @@ func BuildRequest(host string, agentId string, bearerToken string) (*http.Reques
 func ProcessResponse(resp *http.Response, w io.Writer) error {
 	// process results
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return errors.New("Response status code not 2XX")
+		return fmt.Errorf("upstream returned %d", resp.StatusCode)
 	}
 	defer resp.Body.Close()
 
@@ -56,18 +62,17 @@ func ProcessResponse(resp *http.Response, w io.Writer) error {
 		return err
 	}
 
-	fmt.Println("Succeeded, response status code: ", resp.StatusCode)
 	return nil
 }
 
-func BuildWriter(ctx context.Context, dest string) (*blob.Bucket, io.WriteCloser, error) {
+func BuildWriter(ctx context.Context, dest string, agentId string, overwrite bool) (*blob.Bucket, io.WriteCloser, error) {
 
 	uri, err := url.Parse(dest)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	var w io.WriteCloser = nil
+	var w io.WriteCloser
 	var bucket *blob.Bucket
 
 	// fileblob needs no_tmp_dir to avoid cross-device rename errors in containers
@@ -86,7 +91,13 @@ func BuildWriter(ctx context.Context, dest string) (*blob.Bucket, io.WriteCloser
 			return nil, nil, err
 		}
 
-		w, err = bucket.NewWriter(ctx, time.Now().UTC().Format("20060102-150405")+".af", nil)
+		filename := agentId
+		if !overwrite {
+			filename += "_" + time.Now().UTC().Format("20060102-150405")
+		}
+		filename += ".af"
+
+		w, err = bucket.NewWriter(ctx, filename, nil)
 		if err != nil {
 			return nil, nil, err
 		}
