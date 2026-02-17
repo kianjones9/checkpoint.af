@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"gocloud.dev/blob"
@@ -82,6 +83,11 @@ func BuildWriter(ctx context.Context, dest string, agentId string, overwrite boo
 		uri.RawQuery = q.Encode()
 	}
 
+	prefix := strings.TrimPrefix(uri.Path, "/")
+	if !strings.HasSuffix(prefix, "/") {
+		prefix += "/"
+	}
+
 	switch uri.Scheme {
 
 	// currently supports file, s3, gcs, etc.: https://gocloud.dev/howto/blob/#services
@@ -90,6 +96,7 @@ func BuildWriter(ctx context.Context, dest string, agentId string, overwrite boo
 		if err != nil {
 			return nil, nil, err
 		}
+		bucket = blob.PrefixedBucket(bucket, prefix)
 
 		filename := agentId
 		if !overwrite {
