@@ -53,4 +53,6 @@ LETTA_API_KEY="sk-let-MTN***...***YQ==" checkpoint --dest="gs://agentfiles/codin
 ```
 
 ### Or even over local filesystem
+```
 LETTA_API_KEY="sk-let-MTN***...***YQ==" checkpoint --dest="file:///agentfiles/coding/"  --agent_id="agent-226dd8d4-09bf-4536-920e-aee9d91d14cb"
+```
