@@ -41,25 +41,17 @@ func Save(client *http.Client) http.HandlerFunc {
 			return
 		}
 
-		bucket, w, err := export.BuildWriter(req.Context(), config.Destination, config.AgentId, config.Overwrite)
+		bucket, filename, err := export.BuildWriter(req.Context(), config.Destination, config.AgentId, config.Overwrite)
 		if err != nil {
 			http.Error(writer, err.Error(), http.StatusBadRequest)
 			return
 		}
+		defer bucket.Close()
 
-		err = export.ProcessResponse(resp, w)
+		err = export.ProcessResponseWithDeduplication(req.Context(), resp, bucket, filename)
 		if err != nil {
-			bucket.Close()
-			w.Close()
 			http.Error(writer, err.Error(), http.StatusBadRequest)
 			return
-		}
-
-		if err := w.Close(); err != nil {
-			log.Printf("writer close error: %v", err)
-		}
-		if err := bucket.Close(); err != nil {
-			log.Printf("bucket close error: %v", err)
 		}
 		log.Print("save complete")
 	}

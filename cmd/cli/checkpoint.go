@@ -23,8 +23,7 @@ func main() {
 	agentId := flag.String("agent_id", "agent-<uuid4>", "ID of agent to snapshot")
 	// TODO: support exporting to af.directory
 	dest := flag.String("dest", "", "URI of desired destination (supports directories and bucket prefixes file://, s3://, gs://, azure_blob://, and other compatible backends: https://gocloud.dev/howto/blob/#services)")
-	overwrite := flag.Bool("overwrite", false, "If true overwrites existing file (agent-id.af) otherwise writes a new timestamp prefixed file")
-	// TODO: only_on_diff
+	overwrite := flag.Bool("overwrite", false, "If true overwrites existing file (agent-id.af) on filename conflict otherwise writes a new timestamp prefixed file")
 	checkpointServer := flag.String("checkpoint_server", "http://127.0.0.1:8080", "URI of checkpoint server if running (executes locally if not running)")
 
 	flag.Parse()
@@ -69,14 +68,13 @@ func main() {
 		log.Fatal(err)
 	}
 
-	bucket, w, err := export.BuildWriter(req.Context(), *dest, *agentId, *overwrite)
+	bucket, filename, err := export.BuildWriter(req.Context(), *dest, *agentId, *overwrite)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer bucket.Close()
-	defer w.Close()
 
-	err = export.ProcessResponse(resp, w)
+	err = export.ProcessResponseWithDeduplication(req.Context(), resp, bucket, filename)
 	if err != nil {
 		log.Fatal(err)
 	}

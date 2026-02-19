@@ -1,7 +1,10 @@
 package export
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net/http"
@@ -10,6 +13,7 @@ import (
 	"time"
 
 	"gocloud.dev/blob"
+	"gocloud.dev/gcerrors"
 
 	_ "gocloud.dev/blob/azureblob" // Azure
 	_ "gocloud.dev/blob/fileblob"  // local filesystem
@@ -23,6 +27,7 @@ type Config struct {
 	AgentId     string `json:"agent_id"`
 	Host        string `json:"host"`
 	Destination string `json:"destination"`
+	OnlyOnDiff  bool   `json:"only_on_diff"`
 	Overwrite   bool   `json:"overwrite"`
 }
 
@@ -66,14 +71,55 @@ func ProcessResponse(resp *http.Response, w io.Writer) error {
 	return nil
 }
 
-func BuildWriter(ctx context.Context, dest string, agentId string, overwrite bool) (*blob.Bucket, io.WriteCloser, error) {
+func ProcessResponseWithDeduplication(ctx context.Context, resp *http.Response, bucket *blob.Bucket, filename string) error {
+	// process results
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("upstream returned %d", resp.StatusCode)
+	}
+	defer resp.Body.Close()
+
+	var buf bytes.Buffer
+	hasher := sha256.New()
+	tee := io.TeeReader(resp.Body, hasher)
+
+	_, err := io.Copy(&buf, tee)
+	if err != nil {
+		return err
+	}
+
+	newHash := hex.EncodeToString(hasher.Sum(nil))
+
+	attrs, err := bucket.Attributes(ctx, filename)
+	if err != nil && gcerrors.Code(err) != gcerrors.NotFound {
+		return err
+	}
+	if err == nil && attrs.Metadata["sha256"] == newHash {
+		return nil
+	}
+
+	w, err := bucket.NewWriter(ctx, filename, &blob.WriterOptions{
+		Metadata: map[string]string{"sha256": newHash},
+	})
+	if err != nil {
+		return err
+	}
+
+	_, err = io.Copy(w, &buf)
+	if err != nil {
+		w.Close()
+		return err
+	}
+
+	return w.Close()
+}
+
+func BuildWriter(ctx context.Context, dest string, agentId string, overwrite bool) (*blob.Bucket, string, error) {
 
 	uri, err := url.Parse(dest)
 	if err != nil {
-		return nil, nil, err
+		return nil, "", err
 	}
 
-	var w io.WriteCloser
 	var bucket *blob.Bucket
 
 	prefix := ""
@@ -90,26 +136,23 @@ func BuildWriter(ctx context.Context, dest string, agentId string, overwrite boo
 		}
 	}
 
+	filename := ""
+
 	switch uri.Scheme {
 
 	// currently supports file, s3, gcs, etc.: https://gocloud.dev/howto/blob/#services
 	default:
 		bucket, err = blob.OpenBucket(ctx, uri.String())
 		if err != nil {
-			return nil, nil, err
+			return nil, "", err
 		}
 		bucket = blob.PrefixedBucket(bucket, prefix)
 
-		filename := agentId
+		filename = agentId
 		if !overwrite {
 			filename += "_" + time.Now().UTC().Format("20060102-150405")
 		}
 		filename += ".af"
-
-		w, err = bucket.NewWriter(ctx, filename, nil)
-		if err != nil {
-			return nil, nil, err
-		}
 	}
-	return bucket, w, nil
+	return bucket, filename, nil
 }

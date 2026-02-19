@@ -1,0 +1,46 @@
+version: 2
+
+builds:
+  - id: checkpoint
+    main: ./cmd/cli
+    binary: checkpoint
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    env:
+      - CGO_ENABLED=0
+
+  - id: server
+    main: ./cmd/server
+    binary: checkpoint-server
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    env:
+      - CGO_ENABLED=0
+
+archives:
+  - id: checkpoint
+    builds:
+      - checkpoint
+    name_template: "checkpoint_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+  - id: server
+    builds:
+      - server
+    name_template: "checkpoint-server_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: "checksums.txt"
+
+release:
+  github:
+    owner: kianjones9
+    name: checkpoint.af
